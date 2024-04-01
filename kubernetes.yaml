@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingress-nginx-cache
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingress-nginx-cache-app
+  namespace: ingress-nginx-cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ingress-nginx-cache-app
+  template:
+    metadata:
+      labels:
+        app: ingress-nginx-cache-app
+    spec:
+      containers:
+        - name: app
+          image: leocomelli/ingress-nginx-cache:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: API_TOKENS
+              value: "s3cr3t, pow3r, runn3r"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingress-nginx-cache-app
+  namespace: ingress-nginx-cache
+spec:
+  selector:
+    app: ingress-nginx-cache-app
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-nginx-cache-app
+  namespace: ingress-nginx-cache
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    kubernetes.io/tls-acme: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: 32m
+    nginx.ingress.kubernetes.io/proxy-buffering: "on"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_cache app-cache;
+      proxy_cache_valid 200 1m;
+      proxy_cache_lock on;
+      proxy_cache_methods GET;
+      proxy_cache_key $host$request_uri;
+      expires 1m;
+      add_header X-Cache-Status $upstream_cache_status;
+
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ingress-cache.leocomelli.dev
+      http:
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: ingress-nginx-cache-app
+                port:
+                  number: 8080
+  tls:
+    - hosts:
+        - ingress-cache.leocomelli.dev
+      secretName: leocomelli-tls
